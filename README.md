@@ -1,5 +1,5 @@
 # TradingAlgo
-
+![Panel](docs/screenshot.png)
 SOXL / SOXS için gün içi sinyal ve risk hesabı yapan, **emir göndermeyen** bir ASP.NET Core (.NET) deneme projesi. Karar destek aracıdır: kararı ve işlemi kullanıcı verir.
 
 > **Durum: park edildi (deneysel).** Gün içi kural seti geçmiş testte kriterleri geçmedi (aşağıya bak). Bu depo bir öğrenme/deney çalışmasıdır, yatırım tavsiyesi değildir.
