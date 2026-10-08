@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TradingAlgo Panel</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f24; --muted: #6a737d;
+    --line: #e1e4e8; --green: #1a7f37; --amber: #9a6700; --gray: #57606a; --red: #cf222e;
+    --greenbg: #dafbe1; --amberbg: #fff8c5; --graybg: #eaeef2; --redbg: #ffebe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e;
+      --line: #30363d; --green: #3fb950; --amber: #d29922; --gray: #8b949e; --red: #f85149;
+      --greenbg: #0f2d1a; --amberbg: #2d2410; --graybg: #21262d; --redbg: #3a1518;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--card);
+         border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; }
+  input[type=number] { width: 120px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px;
+         background: var(--bg); color: var(--text); font-size: 15px; }
+  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--text);
+         color: var(--bg); font-size: 14px; cursor: pointer; }
+  .chk { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; }
+  .banner { margin: 12px 0; padding: 14px 16px; border-radius: 10px; font-size: 20px; font-weight: 600; }
+  .meta { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .sym { font-size: 18px; font-weight: 700; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .reason { font-size: 13px; color: var(--muted); margin-bottom: 10px; min-height: 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.plan td { font-weight: 600; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+  .err { background: var(--redbg); color: var(--red); padding: 12px; border-radius: 10px; margin: 12px 0; }
+  .green { background: var(--greenbg); color: var(--green); }
+  .amber { background: var(--amberbg); color: var(--amber); }
+  .gray { background: var(--graybg); color: var(--gray); }
+  .red { background: var(--redbg); color: var(--red); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TradingAlgo: SOXL / SOXS karar destek paneli</h1>
+
+  <div class="bar">
+    <label>Günlük tutar ($)<input id="cap" type="number" min="100" step="100" value="10000"></label>
+    <label>İşlem başı risk ($)<input id="risk" type="number" min="0" step="10" value="50"></label>
+    <button id="go">Yenile</button>
+    <label class="chk"><input id="auto" type="checkbox"> 60 sn'de bir yenile</label>
+  </div>
+
+  <div id="banner" class="banner gray">Yükleniyor...</div>
+  <div id="meta" class="meta"></div>
+  <div id="error"></div>
+  <div id="cards" class="grid"></div>
+
+  <div class="note">
+    Fiyat, son tamamlanmış 5 dakikalık mumun kapanışıdır (ücretsiz IEX verisi). Emir vermeden önce Midas'taki
+    güncel fiyatı kontrol et; adedi ve stop'u gerçek fiyata göre yeniden hesapla.
+    Bu kural seti geçmiş testte kriterleri geçmedi. Panel yatırım tavsiyesi değildir.
+  </div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const num = (x, d) => (x === null || x === undefined) ? "–" : Number(x).toFixed(d);
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function statusClass(s) {
+    if (s === "LONG") return "green";
+    if (s === "İZLE") return "amber";
+    if (s === "BEKLE") return "gray";
+    return "red"; // VERİ ESKİ, VERİ YETERSİZ, ATLA
+  }
+
+  function row(label, value, cls) {
+    const tr = el("tr", cls);
+    tr.appendChild(el("td", "", label));
+    tr.appendChild(el("td", "", value));
+    return tr;
+  }
+
+  function card(e) {
+    const c = el("div", "card");
+    const head = el("div", "head");
+    head.appendChild(el("span", "sym", e.symbol));
+    head.appendChild(el("span", "badge " + statusClass(e.status), e.status));
+    c.appendChild(head);
+    c.appendChild(el("div", "reason", (e.reasons && e.reasons[0]) || ""));
+
+    const t = el("table");
+    t.appendChild(row("Son mum (TSİ)", e.barStartTr || "–"));
+    t.appendChild(row("Kapanış", num(e.close, 2)));
+    t.appendChild(row("EMA20 / EMA50", num(e.ema20, 2) + " / " + num(e.ema50, 2)));
+    t.appendChild(row("RSI14", num(e.rsi, 1)));
+    t.appendChild(row("ATR14", num(e.atr, 3)));
+    if (e.status === "LONG") {
+      t.appendChild(row("Giriş", num(e.entry, 2), "plan"));
+      t.appendChild(row("Stop", num(e.stop, 2), "plan"));
+      t.appendChild(row("TP1 / TP2", num(e.tp1, 2) + " / " + num(e.tp2, 2), "plan"));
+      t.appendChild(row("Adet", String(e.shares), "plan"));
+      t.appendChild(row("Risk", "$" + num(e.riskAmount, 2), "plan"));
+      t.appendChild(row("Pozisyon", "$" + num(e.positionValue, 2), "plan"));
+    }
+    c.appendChild(t);
+    return c;
+  }
+
+  async function refresh() {
+    const cap = $("cap").value, risk = $("risk").value;
+    localStorage.setItem("ta_cap", cap);
+    localStorage.setItem("ta_risk", risk);
+
+    $("error").replaceChildren();
+    try {
+      const res = await fetch("/api/signal?capital=" + encodeURIComponent(cap) +
+                              "&risk=" + encodeURIComponent(risk));
+      const data = await res.json();
+
+      if (!res.ok) {
+        const msg = data.error || ("Hata " + res.status);
+        const detail = data.detail ? " (" + data.detail + ")" : "";
+        const d = el("div", "err", msg + detail);
+        $("error").appendChild(d);
+        $("banner").className = "banner red";
+        $("banner").textContent = "Veri alınamadı";
+        $("cards").replaceChildren();
+        return;
+      }
+
+      const a = data.advice || "";
+      $("banner").textContent = a;
+      $("banner").className = "banner " +
+        (a.startsWith("AL ADAYI") ? "green" : a.startsWith("SEANS") ? "amber" : "gray");
+
+      $("meta").textContent = "Güncelleme: " + data.timeTr + " TSİ  |  Seans: " +
+        (data.marketOpen ? "açık" : "kapalı") + "  |  Tutar $" + data.capitalUsed +
+        "  |  Risk $" + data.fixedRiskUsed;
+
+      $("cards").replaceChildren(card(data.soxl), card(data.soxs));
+    } catch (err) {
+      $("error").appendChild(el("div", "err", "Sunucuya ulaşılamadı. dotnet run çalışıyor mu?"));
+      $("banner").className = "banner red";
+      $("banner").textContent = "Bağlantı yok";
+    }
+  }
+
+  let timer = null;
+  function setAuto() {
+    if (timer) { clearInterval(timer); timer = null; }
+    if ($("auto").checked) timer = setInterval(refresh, 60000);
+  }
+
+  $("cap").value = localStorage.getItem("ta_cap") || $("cap").value;
+  $("risk").value = localStorage.getItem("ta_risk") || $("risk").value;
+  $("go").addEventListener("click", refresh);
+  $("auto").addEventListener("change", setAuto);
+  refresh();
+</script>
+</body>
+</html>
